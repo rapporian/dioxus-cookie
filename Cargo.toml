@@ -1,0 +1,64 @@
+[package]
+name = "dioxus-cookie"
+version = "0.1.0"
+edition = "2021"
+description = "Unified cookie storage for Dioxus fullstack apps that fills the gap in native platforms with keychain integration and encrypted file-vault fallback for simulators"
+license = "MIT"
+repository = "https://github.com/rapporian/dioxus-cookie"
+documentation = "https://docs.rs/dioxus-cookie"
+keywords = ["cookies", "dioxus", "keyring", "storage"]
+categories = ["web-programming", "authentication"]
+readme = "README.md"
+
+[features]
+default = []
+
+# Server-side HTTP cookies (Dioxus FullstackContext)
+server = ["dep:dioxus"]
+
+# Native keyring storage (iOS Keychain, Android Keystore, macOS Keychain)
+keyring = ["dep:keyring", "dep:dirs", "dep:serde_json", "dep:dioxus", "dep:cookie_store"]
+
+# Desktop platform (implies keyring)
+desktop = ["keyring"]
+
+# Mobile platform (implies keyring)
+mobile = ["keyring"]
+
+# Encrypted file fallback for environments without system keychain access.
+# Use cases: iOS Simulator, Linux without Secret Service, CI/CD, containers.
+# DEBUG BUILDS ONLY — disabled in release builds for security.
+# Not a substitute for real keychain storage in production.
+file-store = ["dep:aes-gcm", "dep:rand", "dep:sha2", "dep:hex", "dep:dirs"]
+
+# Convenience: mobile + file-store for iOS Simulator development
+mobile-sim = ["mobile", "file-store"]
+
+[dependencies]
+# Always needed
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+urlencoding = "2"
+
+# Dioxus (for server and native cookie stores)
+dioxus = { version = "0.7", features = ["fullstack"], optional = true }
+
+# Native keyring
+keyring = { version = "3", features = ["apple-native", "linux-native", "windows-native"], optional = true }
+dirs = { version = "6", optional = true }
+serde_json = { version = "1", optional = true }
+
+# RFC 6265 compliant cookie handling (for native platforms)
+cookie_store = { version = "0.22.0", features = ["serde_json"], optional = true }
+
+# Encryption for file fallback (simulator only)
+aes-gcm = { version = "0.10", optional = true }
+rand = { version = "0.9", optional = true }
+sha2 = { version = "0.10", optional = true }
+hex = { version = "0.4", optional = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+web-sys = { version = "0.3", features = ["Window", "Document", "HtmlDocument"] }
+
+[package.metadata.docs.rs]
+all-features = true
