@@ -1,6 +1,6 @@
 [package]
 name = "dioxus-cookie"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "Unified cookie storage for Dioxus fullstack apps that fills the gap in native platforms with keychain integration and encrypted file-vault fallback for simulators"
 license = "MIT"
@@ -16,14 +16,18 @@ default = []
 # Server-side HTTP cookies (Dioxus FullstackContext)
 server = ["dep:dioxus"]
 
-# Native keyring storage (iOS Keychain, Android Keystore, macOS Keychain)
+# Native keyring storage (iOS Keychain, Android KeyStore, macOS Keychain, Windows Credential Manager, Linux Secret Service)
 keyring = ["dep:keyring", "dep:dirs", "dep:serde_json", "dep:dioxus", "dep:cookie_store"]
 
 # Desktop platform (implies keyring)
 desktop = ["keyring"]
 
-# Mobile platform (implies keyring)
+# Mobile platform - iOS + Android (implies keyring)
 mobile = ["keyring"]
+
+# Android: skip KeyStore entirely, use encrypted file storage directly.
+# Recommended for maximum reliability on Android where KeyStore may be unavailable.
+android-file = ["file-store"]
 
 # Encrypted file fallback for environments without system keychain access.
 # Use cases: iOS Simulator, Linux without Secret Service, CI/CD, containers.
@@ -31,7 +35,7 @@ mobile = ["keyring"]
 # Not a substitute for real keychain storage in production.
 file-store = ["dep:aes-gcm", "dep:rand", "dep:sha2", "dep:hex", "dep:dirs"]
 
-# Convenience: mobile + file-store for iOS Simulator development
+# Convenience: mobile + file-store for simulator/emulator development
 mobile-sim = ["mobile", "file-store"]
 
 [dependencies]
@@ -59,6 +63,10 @@ hex = { version = "0.4", optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 web-sys = { version = "0.3", features = ["Window", "Document", "HtmlDocument"] }
+
+# Android KeyStore integration (experimental)
+[target.'cfg(target_os = "android")'.dependencies]
+android-keyring = "0.2"
 
 [package.metadata.docs.rs]
 all-features = true

@@ -31,8 +31,8 @@ static STORE: OnceLock<Arc<KeyringCookieStore>> = OnceLock::new();
 
 impl KeyringCookieStore {
     #[cfg(feature = "file-store")]
-    fn new() -> Arc<Self> {
-        let (vault, using_file_fallback) = Self::load();
+    fn new(force_file: bool) -> Arc<Self> {
+        let (vault, using_file_fallback) = Self::load(force_file);
         Arc::new(Self {
             vault: RwLock::new(vault),
             using_file_fallback: RwLock::new(using_file_fallback),
@@ -57,7 +57,17 @@ impl KeyringCookieStore {
     }
 
     #[cfg(feature = "file-store")]
-    fn load() -> (CookieVault, bool) {
+    fn load(force_file: bool) -> (CookieVault, bool) {
+        // If forcing file mode, skip keyring entirely
+        if force_file {
+            if let Some(vault) = crate::file_store::read_vault(VAULT_FILE)
+                .and_then(|json| serde_json::from_str(&json).ok())
+            {
+                return (vault, true);
+            }
+            return (CookieVault::default(), true);
+        }
+
         // Try file first (might be from previous simulator run)
         if let Some(vault) = crate::file_store::read_vault(VAULT_FILE)
             .and_then(|json| serde_json::from_str(&json).ok())
@@ -117,7 +127,12 @@ impl KeyringCookieStore {
 
     #[cfg(feature = "file-store")]
     fn is_keyring_unavailable(err: &str) -> bool {
-        err.contains("entitlement") || err.contains("Platform secure storage")
+        let err_lower = err.to_lowercase();
+        err_lower.contains("entitlement")
+            || err_lower.contains("platform secure storage")
+            || err_lower.contains("jni")
+            || err_lower.contains("keystore")
+            || err_lower.contains("ndk-context")
     }
 }
 
@@ -203,9 +218,18 @@ impl KeyringCookieStore {
         #[cfg(feature = "file-store")]
         {
             if *self.using_file_fallback.read().unwrap() {
+                #[cfg(target_os = "android")]
+                return "android-file";
+
+                #[cfg(not(target_os = "android"))]
                 return "file";
             }
         }
+
+        #[cfg(target_os = "android")]
+        return "android-keystore";
+
+        #[cfg(not(target_os = "android"))]
         "keychain"
     }
 }
@@ -248,6 +272,38 @@ impl ReqwestCookieStore for KeyringCookieStore {
 }
 
 pub fn init() {
+    // Determine if we should force file mode on Android
+    #[allow(unused_mut, unused_variables, unused_assignments)]
+    let mut force_file = false;
+
+    #[cfg(target_os = "android")]
+    {
+        // android-file feature: skip KeyStore entirely, use file storage
+        #[cfg(feature = "android-file")]
+        {
+            force_file = true;
+        }
+
+        // Otherwise, try to initialize Android keyring
+        #[cfg(not(feature = "android-file"))]
+        {
+            if let Err(e) = android_keyring::set_android_keyring_credential_builder() {
+                #[cfg(feature = "file-store")]
+                {
+                    force_file = true;
+                    eprintln!("dioxus-cookie: Android KeyStore init failed: {e}. Using file fallback.");
+                }
+                #[cfg(not(feature = "file-store"))]
+                panic!("dioxus-cookie: Android KeyStore init failed: {e}. Enable file-store or android-file feature for fallback.");
+            }
+        }
+    }
+
+    // Initialize the cookie store
+    #[cfg(feature = "file-store")]
+    let store = STORE.get_or_init(|| KeyringCookieStore::new(force_file));
+
+    #[cfg(not(feature = "file-store"))]
     let store = STORE.get_or_init(KeyringCookieStore::new);
 
     let client = reqwest::Client::builder()

@@ -3,7 +3,7 @@
 //! Dioxus apps can target web, desktop, iOS, and Android from a single codebase.
 //! Native platforms lack built-in cookie storage—when a server function sets a cookie,
 //! native apps silently discard it. **dioxus-cookie** provides a unified cookie API that
-//! works identically across all platforms.
+//! works across all supported platforms.
 //!
 //! # Quick Start
 //!
@@ -28,21 +28,22 @@
 //! | Browser | `document.cookie` |
 //! | Desktop | System keyring |
 //! | iOS | Keychain |
-//! | Android | Keystore |
+//! | Android | KeyStore (default) or encrypted file (`android-file` feature) |
 //!
 //! # Features
 //!
 //! - `server` — Server-side cookie handling via HTTP headers
 //! - `desktop` — Desktop platforms with system keyring storage
-//! - `mobile` — iOS/Android with Keychain/Keystore storage
-//! - `mobile-sim` — Mobile + file fallback for iOS Simulator development
+//! - `mobile` — iOS/Android with Keychain/KeyStore storage
+//! - `android-file` — Force encrypted file storage on Android (skip KeyStore)
+//! - `mobile-sim` — Mobile + file fallback for simulator/emulator development
 //! - `file-store` — Encrypted file fallback (see security note below)
 //!
 //! # File Storage Fallback
 //!
 //! The `file-store` feature provides encrypted file-based storage for environments
-//! where the system keychain is unavailable (iOS Simulator, Linux without D-Bus,
-//! CI/CD pipelines, Docker containers).
+//! where the system keychain is unavailable (iOS Simulator, Android Emulator,
+//! Linux without D-Bus, CI/CD pipelines, Docker containers).
 //!
 //! **Security limitations:**
 //! - **Debug builds only** — automatically disabled in release builds
@@ -100,9 +101,10 @@ macro_rules! platform_dispatch {
 /// }
 /// ```
 ///
-/// # Panics
+/// # Note
 ///
-/// Panics if called after `dioxus::launch()` has already initialized the HTTP client.
+/// If called after `dioxus::launch()` has already initialized the HTTP client,
+/// the custom cookie store will not be used. Always call `init()` first.
 pub fn init() {
     #[cfg(all(feature = "keyring", not(feature = "server")))]
     native::init();
@@ -211,8 +213,9 @@ pub fn clear(name: &str) -> Result<(), CookieError> {
 
 /// Lists names of all accessible cookies.
 ///
-/// Returns only non-HttpOnly cookies (matching browser behavior).
-/// Expired cookies are automatically excluded.
+/// On native platforms, returns only non-HttpOnly cookies (matching browser behavior).
+/// On the server, returns all cookies (HttpOnly info not available in request headers).
+/// Expired cookies are automatically excluded on native platforms.
 ///
 /// # Example
 ///
